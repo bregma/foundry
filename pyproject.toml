@@ -7,7 +7,9 @@ authors = [
     { name = "Stephen M. Webb", email = "stephen.webb@bregmasoft.ca" }
 ]
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "pyyaml>=6.0.3",
+]
 
 [project.scripts]
 foundry = "foundry.cli.__main__:main"

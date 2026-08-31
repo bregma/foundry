@@ -5,21 +5,12 @@ import configparser as CFG
 import sys
 
 from . import list
+from ..config.config import Config
 
 _commands = [
     list,
 ]
 
-def get_config(args):
-    """ Convert command-line arguments and config file into a global application configuration object."""
-    config = CFG.ConfigParser()
-
-    for key, value in vars(args).items():
-        config.set("DEFAULT", key, str(value))
-
-    if args.config:
-        config.read(args.config.name)
-    return config
 
 def main(args=None):
     """ Command-line tool entry point."""
@@ -41,7 +32,7 @@ def main(args=None):
         command.add_parser(subparsers)
 
     args = parser.parse_args(args)
-    config = get_config(args)
+    config = Config.load(args)
     try:
         args.func(config)
         sys.exit(0)
