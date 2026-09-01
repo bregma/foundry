@@ -4,10 +4,11 @@ import argparse as ARG
 import configparser as CFG
 import sys
 
-from . import list
+from . import list, convert
 from ..config.config import Config
 
 _commands = [
+    convert,
     list,
 ]
 
