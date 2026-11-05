@@ -1,47 +1,34 @@
 """ Entry point for the command-line interface. """
 
-import argparse as ARG
+import click
 import configparser as CFG
 import sys
 
-from . import convert, index, list
+#from . import convert, index, list
 from ..config.config import Config
-
-_commands = [
-    convert,
-    index,
-    list,
-]
+from .list import list_cli
 
 
-def main(args=None):
-    """ Command-line tool entry point."""
-    if args is None:
-        args = sys.argv[1:]
+@click.group()
+@click.option('-c', '--config',  type=click.File('r'), help='load site config from named file')
+@click.option('-d', '--debug',   is_flag=True,         help='emit internal debugging diagnostics')
+@click.option('-v', '--verbose', is_flag=True,         help='increase logging verbosity')
+@click.pass_context
+def cli(ctx, config, debug, verbose):
+    """ """
+    class Args:
+        pass
 
-    parser = ARG.ArgumentParser(prog='hl')
-    parser.add_argument("-c", "--config",
-                        type=ARG.FileType('r'),
-                        help="load site config from name file")
-    parser.add_argument("-d", "--debug",
-                        action="store_true",
-                        help="emit internal debugging diagnostics")
-    parser.add_argument("-v", "--verbose",
-                        action="store_true",
-                        help="increase logging verbosity")
-    subparsers = parser.add_subparsers(title='commands')
-    for command in _commands:
-        command.add_parser(subparsers)
+    args = Args()
+    args.config = config
+    args.debug = debug
+    args.verbose = verbose
 
-    args = parser.parse_args(args)
-    config = Config.load(args)
-    try:
-        args.func(config)
-        sys.exit(0)
-    except AttributeError:
-        parser.print_help(sys.stderr)
-        sys.exit(2)
+    ctx.obj = Config.load(args)
+
+
+cli.add_command(list_cli)
 
 
 if __name__ == '__main__':
-    main()
+    cli()

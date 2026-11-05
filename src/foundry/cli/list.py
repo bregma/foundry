@@ -1,19 +1,30 @@
 """ Subcommand to list entities """
 
+import click
 import glob
 import os
 import sys
 import yaml
 from ..config.config import Config
+from mwparserfromhell.wikicode import Wikicode
+from mwparserfromhell.nodes import Heading, Template, Wikilink
 
+_item_name: dict
+_crafting_tags: dict
 _template_directory: str
 _workstation_effects: dict
 
-def add_parser(subparsers):
-    """ Adds the CLI arguments parser for this subcommand. """
-    parser = subparsers.add_parser('list',
-                                   help='list entities (incomplete)')
-    parser.set_defaults(func=list_command)
+
+def load_item_names():
+    item_name = {}
+    item_path = os.path.join(_template_directory, 'ItemTemplate')
+    search_pattern = os.path.join(item_path, '*.yaml')
+    for file_path in glob.iglob(search_pattern):
+        with open(file_path, 'r') as yaml_file:
+            resource = yaml.safe_load(yaml_file)
+            for key, value in resource['ItemTemplate'].items():
+                item_name[value['identifier']] = value['name']
+    return item_name
 
 
 def load_crafting_tags(crafting_tags_path):
@@ -68,6 +79,7 @@ def find_icon(config, icon_id):
 
 
 class Buildable:
+    """ Class wrapping info on a buildable item."""
 
     def __init__(self, item_id: str):
         buildable_object_path = os.path.join(_template_directory, 'BuildableObjectTemplate')
@@ -75,53 +87,70 @@ class Buildable:
         with open(buildable_obj_file_path, 'r') as bf:
             buildable_yaml = yaml.safe_load(bf)
             buildable = buildable_yaml['BuildableObjectTemplate'][item_id]
-            self.object_type          = buildable['type']
-            self.object_size          = buildable['size']
-            self.requires_foundation  = buildable['hasToBeOnFoundation']
-            self.is_modular_building  = bool(buildable["isModularBuilding"])
-            self.power_subtype        = buildable['powerSubType']
-            self.energy_consumption   = buildable['energyConsumptionKW_str']
-            self.lvg_connection       = bool(buildable['hasEnergyGridConnection'])
-            self.hvg_connection       = bool(buildable['hasPoleGridConnection'])
-            self.hvg_connection_max   = int(buildable['poleGrid_maxConnections'])
-            self.hvg_connection_range = int(buildable['poleGrid_connectionRange'])
-            self.hvg_transmission     = buildable['transformer_transmissionRate_kjPerS_str']
-            self.producer_modifier    = buildable['producer_recipeTimeModifier_str']
-            self.ws_affects           = None
-            self.ws_excludes          = None
+            self.object_type             = buildable['type']
+            self.object_size             = buildable['size']
+            self.requires_foundation     = buildable['hasToBeOnFoundation']
+            self.is_modular_building     = bool(buildable["isModularBuilding"])
+            self.power_subtype           = buildable['powerSubType']
+            self.energy_consumption      = buildable['energyConsumptionKW_str']
+            self.lvg_connection          = bool(buildable['hasEnergyGridConnection'])
+            self.hvg_connection          = bool(buildable['hasPoleGridConnection'])
+            self.hvg_connection_max      = int(buildable['poleGrid_maxConnections'])
+            self.hvg_connection_range    = int(buildable['poleGrid_connectionRange'])
+            self.hvg_transmission        = buildable['transformer_transmissionRate_kjPerS_str']
+            self.battery_capacity        = buildable['battery_capacityKJ_str']
+            self.storage_size            = buildable['storage_slotSize']
+            self.has_data_system         = bool(buildable['hasDataSystemManager'])
+            self.blast_resistant         = not bool(buildable['canBeDestroyedByDynamite'])
+
+            self.recipe_multiplier       = ''
+            self.recipe_producer_types   = ''
+            if self.object_type == 'Producer':
+                self.recipe_multiplier     = str(buildable['producer_recipeTimeModifier_str'])
+                self.recipe_producer_types = ', '.join([_crafting_tags[t] for t in buildable['producer_recipeType_tags']])
+            elif self.object_type == 'AutoProducer':
+                self.recipe_multiplier     = str(buildable['autoProducer_recipeTimeModifier_str'])
+                self.recipe_producer_types = _crafting_tags[buildable['autoProducer_recipeType_tag']]
+            elif self.object_type == 'ModularEntityProducer':
+                self.recipe_multiplier     = str(buildable['modularProducer_recipeTimeModifier_str'])
+                self.recipe_producer_types = ', '.join([_crafting_tags[t] for t in buildable['modularProducer_recipeType_tags']])
+            self.ws_affects              = None
 
             if bool(buildable['hasWorkstationEffectManager']):
                 ws_affects_list = []
                 for s in buildable['workstationEffectTags']:
                     ws_affects_list.append(_workstation_effects[s.split('|')[0]])
                 self.ws_affects       = ', '.join(ws_affects_list)
-                ws_excludes_list = []
-                for s in buildable['workstationEffectTags']:
-                    ws_excludes_list.append(_workstation_effects[s.split('|')[0]])
-                self.ws_excludes = ', '.join(ws_excludes_list)
 
-def load_buildable(config: Config, item_id: str) -> (bool, dict):
-    """ Finds and loads the BuildableObjectTemplate for an Item, is one exists. """
-    buildable_object_path = os.path.join(_template_directory, 'BuildableObjectTemplate')
-    buildable_obj_file_path = os.path.join(buildable_object_path, item_id) + ".yaml"
-    if config.verbose:
-        print(f'  trying buildable object template "{buildable_obj_file_path}" ..')
-    try:
-        with open(buildable_obj_file_path, 'r') as bf:
-            if config.verbose:
-                print(f'  .. found')
-            buildable = yaml.safe_load(bf)
-            return (True, buildable['BuildableObjectTemplate'][item_id])
-    except FileNotFoundError:
-        if config.verbose:
-            print(f'  .. not found')
-        pass
-    return (False, None)
+def align_template_equals(wikicode):
+    """
+    Aligns the '=' signs in all templates found in the given wikicode string.
+    """
+    for template in wikicode.filter_templates():
+        # Get all parameter names and values
+        params = [(str(p.name).strip(), str(p.value).strip()) for p in template.params]
+
+        if not params:
+            continue
+
+        # Find the longest parameter name length
+        max_name_len = max(len(name) for name, _ in params)
+
+        # Rebuild the template text with aligned '='
+        aligned_lines = []
+        for name, value in params:
+            padding = " " * (max_name_len - len(name))
+            aligned_lines.append(f"| {name}{padding} = {value}")
+
+        # Replace the template in the wikicode
+        template_str = "{{" + str(template.name).strip() + "\n" + "\n".join(aligned_lines) + "\n}}"
+        wikicode.replace(template, template_str)
+    return wikicode
 
 
 def list_command(config):
     """ Entry function for importer module. """
-    global _template_directory, _workstation_effects
+    global _item_name, _crafting_tags, _template_directory, _workstation_effects
 
     _template_directory = config["SOURCE"]["template_path"]
     if config.verbose:
@@ -129,7 +158,7 @@ def list_command(config):
     if not os.path.isdir(_template_directory):
         raise ValueError(f"Provided template path '{_template_directory}' is not a valid directory.")
 
-    crafting_tags = load_crafting_tags(os.path.join(_template_directory, 'CraftingTag'))
+    _crafting_tags = load_crafting_tags(os.path.join(_template_directory, 'CraftingTag'))
     industries = load_industries(os.path.join(_template_directory, 'IndustryTemplate'))
     sales_categories = load_sales_categories(os.path.join(_template_directory, 'SalesItemCategoryTemplate'))
     _workstation_effects = load_workstation_effects()
@@ -139,7 +168,8 @@ def list_command(config):
     recipe_path = os.path.join(_template_directory, 'CraftingRecipe')
     research_path = os.path.join(_template_directory, 'ResearchTemplate')
 
-    wiki_file_directory = config["OUTPUT"]["wiki_file_path"]
+    wiki_item_directory = config["OUTPUT"]["wiki_item_path"]
+    _item_name = load_item_names()
 
     search_pattern = os.path.join(item_path, '*.yaml')
     for file_path in glob.iglob(search_pattern):
@@ -163,11 +193,14 @@ def list_command(config):
 
                 ws_data1       = value['workstationItem_data01']
                 ws_data1       = value['workstationItem_data02']
-
-                ws_type_list = []
+                ws_required_list = []
                 for s in value['workstationItem_requiredTags']:
-                    ws_type_list.append(_workstation_effects[s.split('|')[0]])
-                ws_types       = ', '.join(ws_type_list)
+                    ws_required_list.append(_workstation_effects[s.split('|')[0]])
+                ws_required       = ', '.join(ws_required_list)
+                ws_excluded_list = []
+                for s in value['workstationItem_excludedTags']:
+                    ws_excluded_list.append(_workstation_effects[s.split('|')[0]])
+                ws_excluded       = ', '.join(ws_excluded_list)
 
                 buildable = None
                 try:
@@ -175,87 +208,102 @@ def list_command(config):
                 except FileNotFoundError:
                     pass
 
-                made_in = []
-                try:
-                    with open(recipe_file_path, 'r') as recipe_file:
-                        has_recipe = True
-                        recipe = yaml.safe_load(recipe_file)
-                        for k, v in recipe['CraftingRecipe'].items():
-                            made_in = v['tags']
-                except FileNotFoundError:
-                    has_recipe = False
-
-                if config.verbose:
-                    print(f'--> {name} : item_id="{item_id}" flags="{flags}" {"CRAFTABLE" if has_recipe else ""} {"BUILDABLE" if buildable is not None else ""} {"IS_MODULAR" if is_modular_building else ""}')
                 wiki_filename = f'{name.strip().replace(" ", "_")}.wiki'
-                print(f'--> file="{wiki_filename}"')
+                if config.verbose:
+                    print(f'--> {name} : item_id="{item_id}" flags="{flags}" {"BUILDABLE" if buildable is not None else ""} {"IS_MODULAR" if is_modular_building else ""}')
+                    print(f'--> file="{wiki_filename}"')
+
+                wikicode = Wikicode([])
+
                 base_template = 'Item'
                 if 'CRITTER' in flags:
                     base_template = 'Critter'
                 if 'BUILDABLE_OBJECT' in flags:
                     base_template = 'Buildable'
-                print('{{'+base_template)
-                print(f'| Name                = {name}')
+                infobox = Template(f'{base_template}\n')
+                infobox.add('Name', f' {name}\n')
                 if stack_size > 0:
-                    print(f'| Stack Size          = {stack_size}')
+                    infobox.add('Stack Size', stack_size)
                 if fuel_value != '':
-                    print(f'| Fuel Value          = {fuel_value}')
+                    infobox.add('Fuel Value', fuel_value)
                 if 'SALES_ITEM' in flags:
-                    print(f'| Sales Category      = {sales_categories[si_category]}')
-                    print(f'| Sales Industry      = {industries[si_industry]}')
-                    print(f'| Sales Price         = {si_price}')
-                    print(f'| Sales Base Demand   = {si_base_demand}')
+                    infobox.add('Sales Category    ', sales_categories[si_category])
+                    infobox.add('Sales Industry    ', industries[si_industry])
+                    infobox.add('Sales Price       ', si_price)
+                    infobox.add('Sales Base Demand ', si_base_demand)
                 if 'WORKSTATION_ITEM' in flags:
-                    print(f'| Workstation Types   = {ws_types}')
+                    infobox.add('Workstation Targets', ws_required)
+                    infobox.add('Workstation Excludes', ws_excluded)
                 if buildable is not None:
                     if buildable.object_type != '':
-                        print(f'| Type                = {buildable.object_type}')
+                        infobox.add('Type                     ', buildable.object_type)
                     if len(buildable.object_size) == 3:
-                        print(f'| Lenth               = {buildable.object_size["x"]}')
-                        print(f'| Width               = {buildable.object_size["z"]}')
-                        print(f'| Height              = {buildable.object_size["y"]}')
+                        infobox.add('Lenth                    ', buildable.object_size["x"])
+                        infobox.add('Width                    ', buildable.object_size["z"])
+                        infobox.add('Height                   ', buildable.object_size["y"])
                     if buildable.requires_foundation:
-                        print(f'| Requires Foundation = 1')
+                        infobox.add('Requires Foundation', '1')
                     if buildable.lvg_connection:
-                        print(f'| Low Voltage Grid    = 1')
+                        infobox.add('Low Voltage Grid', '1')
                     if 'CONSUMER' in buildable.power_subtype and buildable.energy_consumption != '' and buildable.energy_consumption != '0':
-                        print(f'| Energy Consumption  = {buildable.energy_consumption}')
+                        infobox.add('Energy Consumption', buildable.energy_consumption)
                     if buildable.hvg_connection:
-                        print(f'| High Voltage Grid        = 1')
-                        print(f'| High Voltage Subtype     = {buildable.power_subtype}')
-                        print(f'| High Voltage Connections = {buildable.hvg_connection_max}')
-                        print(f'| High Voltage Range       = {buildable.hvg_connection_range}')
+                        infobox.add('High Voltage Grid', '1')
+                        infobox.add('High Voltage Subtype', buildable.power_subtype)
+                        infobox.add('High Voltage Connections', buildable.hvg_connection_max)
+                        infobox.add('High Voltage Range', buildable.hvg_connection_range)
                     if 'TRANSFORMER' in buildable.power_subtype and buildable.hvg_transmission != '' and buildable.hvg_transmission != '0':
-                        print(f'| High Voltage Transmission = {buildable.hvg_transmission}')
-                    if buildable.object_type == 'Producer':
-                        print(f'| Production Multiplier = {buildable.producer_modifier}')
-                    if 'BUILDABLE_OBJECT' in flags and buildable.ws_affects:
-                        print(f'| Workstation Affects = {buildable.ws_affects}')
-                        print(f'| Workstation Excludes = {buildable.ws_excludes}')
-                print('}}')
-                if has_recipe:
-                    print('\n== Crafting ==')
-                    for maker in made_in:
-                        print(f'* {crafting_tags[maker]}')
-
-                print('')
-                if has_recipe:
-                    print('[[Category:Craftable Objects]]')
-                if buildable is not None:
+                        infobox.add('High Voltage Transmission', buildable.hvg_transmission)
                     if 'BUILDABLE_OBJECT' in flags:
-                        print('[[Category:Buildable Objects]]')
-                    if 'BURNABLE' in flags:
-                        print('[[Category:Burnables]]')
-                    if 'CRITTER' in flags:
-                        print('[[Category:Critters]]')
+                        if buildable.battery_capacity:
+                            infobox.add('Battery Capacity', buildable.battery_capacity)
+                        if buildable.storage_size:
+                            infobox.add('Storage Size', buildable.storage_size)
+                        if buildable.has_data_system:
+                            infobox.add('Data System Support', '1')
+                        if buildable.blast_resistant:
+                            infobox.add('Blast Resistant', '1')
+                        if buildable.ws_affects:
+                            infobox.add('Workstation Affects', buildable.ws_affects)
+                        if len(buildable.recipe_producer_types) > 0:
+                            infobox.add('Recipe Producer Types', buildable.recipe_producer_types)
+                            infobox.add('Recipe Multiplier', buildable.recipe_multiplier)
+                wikicode.append(infobox)
+                wikicode.append('\n\n')
+
+                recipe_template = Template(f'Recipe/For Item')
+                wikicode.append(recipe_template)
+                wikicode.append('\n')
+                wikicode.append('\n')
+                if buildable is not None:
                     if buildable.is_modular_building:
-                        print('[[Category:Modular Buildings]]')
-                    if 'HANDHELD' in flags:
-                        print('[[Category:Handhelds]]')
-                    if 'SALES_ITEM' in flags:
-                        print('[[Category:Sales Items]]')
-                    if 'SEED' in flags:
-                        print('[[Category:Seeds]]')
-                    if 'WORKSTATION_ITEM' in flags:
-                        print('[[Category:Workstation Items]]')
-                print()
+                        wikicode.append(Wikilink('Category:Modular Buildings'))
+                        wikicode.append('\n')
+                if 'BURNABLE' in flags:
+                    wikicode.append(Wikilink('Category:Burnables'))
+                    wikicode.append('\n')
+                if 'CRITTER' in flags:
+                    wikicode.append(Wikilink('Category:Critters'))
+                    wikicode.append('\n')
+                if 'HANDHELD' in flags:
+                    wikicode.append(Wikilink('Category:Handhelds'))
+                    wikicode.append('\n')
+                if 'SALES_ITEM' in flags:
+                    wikicode.append(Wikilink('Category:Sales Items'))
+                    wikicode.append('\n')
+                if 'SEED' in flags:
+                    wikicode.append(Wikilink('Category:Seeds'))
+                    wikicode.append('\n')
+                if 'WORKSTATION_ITEM' in flags:
+                    wikicode.append(Wikilink('Category:Workstation Items'))
+                    wikicode.append('\n')
+
+                outfile_name = os.path.join('/home/stephen/projects/foundry/wiki/Main', wiki_filename)
+                with open(outfile_name, 'w') as outfile:
+                    print(str(align_template_equals(wikicode)), file=outfile)
+
+
+@click.command("list")
+@click.pass_obj
+def list_cli(config):
+    list_command(config)
