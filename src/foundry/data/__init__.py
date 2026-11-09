@@ -18,6 +18,7 @@ this program.  If not, see <https://www.gnu.org/licenses/>.
 from .buildable import Buildable
 from .crafting_tag import CraftingTag
 from .creative_mode import CreativeMode
+from .element import Element
 from .industry import Industry
 from .item import Item
 from .sales_category import SalesCategory
@@ -26,6 +27,7 @@ from .workstation_effect import WorkstationEffect
 __all__ = ['Buildable',
            'CraftingTag',
            'CreativeMode',
+           'Element',
            'Industry',
            'Item',
            'SalesCategory',

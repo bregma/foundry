@@ -22,7 +22,7 @@ from mwparserfromhell.nodes import Template, Wikilink
 from mwparserfromhell.wikicode import Wikicode
 
 from foundry.config import Config
-from foundry.data import Item
+from foundry.data import Element, Item
 
 
 def find_icon(config: Config, icon_id: str) -> str:
@@ -57,8 +57,8 @@ def align_template_equals(wikicode: Wikicode) -> Wikicode:
     return wikicode
 
 
-def list_command(config: Config) -> None:
-    """Entry function for importer module."""
+def generate_items(config: Config) -> None:
+    """Generate pages for Items."""
     template_directory = Path(config.template_base)
     if config.verbose:
         print(f'looking in "{template_directory}"')
@@ -105,6 +105,25 @@ def list_command(config: Config) -> None:
         with outfile_name.open(mode='w') as outfile:
             print(str(align_template_equals(wikicode)), file=outfile)
 
+def generate_elements(config: Config) -> None:
+    """Generate pages for Elements."""
+    element_path = Path(config.template_base, 'ElementTemplate')
+    for file_path in element_path.glob('*.yaml'):
+        element = Element(file_path, config)
+
+        wikitext = Wikicode([])
+        wikitext.append(element.wikitext_infobox())
+        wikitext.append('\n\n')
+        wikitext.append('\n')
+        wikitext.append(Template('Recipe/For Item'))
+        wikitext.append('\n')
+        wikitext.append(Wikilink('Category:Elements'))
+
+        wiki_filename = f'{element.name.strip().replace(" ", "_")}.wiki'
+        wiki_item_directory = config["OUTPUT"]["wiki_item_path"]
+        outfile_name = Path(wiki_item_directory, wiki_filename)
+        with outfile_name.open(mode='w') as outfile:
+            print(str(align_template_equals(wikitext)), file=outfile)
 
 @click.group("list")
 @click.pass_obj
@@ -117,4 +136,13 @@ def list_cli(config: Config) -> None:
 def translate_item(config: Config, filter_str: str) -> None:
     """Main entry point for the *list item* subcommand."""
     click.echo(f'--> filter="{filter}"')
-    list_command(config)
+    generate_items(config)
+
+@list_cli.command('element')
+@click.option('-f', '--filter', 'filter_str', help='regex of objects to pass the filter')
+@click.pass_obj
+def translate_element(config: Config, filter_str: str) -> None:
+    """Main entry point for the *list element* subcommand."""
+    click.echo(f'--> filter="{filter}"')
+    generate_elements(config)
+
