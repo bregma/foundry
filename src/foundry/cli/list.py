@@ -71,70 +71,12 @@ def list_command(config: Config) -> None:
         item = Item(file_path, config)
 
         wikicode = Wikicode([])
-
-        base_template = 'Item'
-        if 'CRITTER' in item.flags:
-            base_template = 'Critter'
-        if 'BUILDABLE_OBJECT' in item.flags:
-            base_template = 'Buildable'
-        infobox = Template(f'{base_template}\n')
-
-        infobox.add('Name', f' {item.name}\n')
-        if item.stack_size > 0:
-            infobox.add('Stack Size', item.stack_size)
-        if item.fuel_value != '':
-            infobox.add('Fuel Value', item.fuel_value)
-        if item.cm_in_creative_mode and item.cm_category and len(item.cm_category) > 0:
-            infobox.add('Category          ', item.cm_category)
-        if 'SALES_ITEM' in item.flags:
-            infobox.add('Sales Category    ', item.si_category)
-            infobox.add('Sales Industry    ', item.si_industry)
-            infobox.add('Sales Price       ', item.si_price)
-            infobox.add('Sales Base Demand ', item.si_base_demand)
-        if 'WORKSTATION_ITEM' in item.flags:
-            infobox.add('Workstation Targets', item.ws_required)
-            infobox.add('Workstation Excludes', item.ws_excluded)
-        if item.buildable is not None:
-            if item.buildable.object_type != '':
-                infobox.add('Type                     ', item.buildable.object_type)
-            if len(item.buildable.object_size) == 3:
-                infobox.add('Lenth                    ', item.buildable.object_size["x"])
-                infobox.add('Width                    ', item.buildable.object_size["z"])
-                infobox.add('Height                   ', item.buildable.object_size["y"])
-            if item.buildable.requires_foundation:
-                infobox.add('Requires Foundation', '1')
-            if item.buildable.lvg_connection:
-                infobox.add('Low Voltage Grid', '1')
-            if 'CONSUMER' in item.buildable.power_subtype and item.buildable.energy_consumption not in {'', '0'}:
-                infobox.add('Energy Consumption', item.buildable.energy_consumption)
-            if item.buildable.hvg_connection:
-                infobox.add('High Voltage Grid', '1')
-                infobox.add('High Voltage Subtype', item.buildable.power_subtype)
-                infobox.add('High Voltage Connections', item.buildable.hvg_connection_max)
-                infobox.add('High Voltage Range', item.buildable.hvg_connection_range)
-            if 'TRANSFORMER' in item.buildable.power_subtype and item.buildable.hvg_transmission not in {'', '0'}:
-                infobox.add('High Voltage Transmission', item.buildable.hvg_transmission)
-            if 'BUILDABLE_OBJECT' in item.flags:
-                if item.buildable.battery_capacity:
-                    infobox.add('Battery Capacity', item.buildable.battery_capacity)
-                if item.buildable.storage_size:
-                    infobox.add('Storage Size', item.buildable.storage_size)
-                if item.buildable.has_data_system:
-                    infobox.add('Data System Support', '1')
-                if item.buildable.blast_resistant:
-                    infobox.add('Blast Resistant', '1')
-                if item.buildable.ws_affects:
-                    infobox.add('Workstation Affects', item.buildable.ws_affects)
-                if len(item.buildable.recipe_producer_types) > 0:
-                    infobox.add('Recipe Producer Types', item.buildable.recipe_producer_types)
-                    infobox.add('Recipe Multiplier', item.buildable.recipe_multiplier)
-        wikicode.append(infobox)
+        wikicode.append(item.wikitext_infobox())
         wikicode.append('\n\n')
 
         recipe_template = Template('Recipe/For Item')
         wikicode.append(recipe_template)
-        wikicode.append('\n')
-        wikicode.append('\n')
+        wikicode.append('\n\n')
         if item.buildable is not None and item.buildable.is_modular_building:
             wikicode.append(Wikilink('Category:Modular Buildings'))
             wikicode.append('\n')

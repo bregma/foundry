@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import LiteralString
 
 import yaml
+from mwparserfromhell.nodes import Template
 
 from foundry.config import Config
 
@@ -104,6 +105,102 @@ class Item:
                 except FileNotFoundError:
                     if config.verbose:
                         print(f'failed to load Buildable for item_id {self.item_id}')
+
+    def _put_buildable_info(self, infobox: Template) -> None:
+        if self.buildable:
+            if self.buildable.object_type != '':
+                infobox.add('Type', self.buildable.object_type)
+            if len(self.buildable.object_size) == 3:
+                infobox.add('Lenth',  self.buildable.object_size["x"])
+                infobox.add('Width',  self.buildable.object_size["z"])
+                infobox.add('Height', self.buildable.object_size["y"])
+            if self.buildable.requires_foundation:
+                infobox.add('Requires Foundation', '1')
+            if self.buildable.has_data_system:
+                infobox.add('Data System Support', '1')
+            if self.buildable.blast_resistant:
+                infobox.add('Blast Resistant', '1')
+            self._put_lvg_info(infobox)
+            self._put_hvg_info(infobox)
+            self._put_producer_info(infobox)
+            self._put_transformer_info(infobox)
+            self._put_battery_info(infobox)
+            self._put_storage_info(infobox)
+
+    def _put_producer_info(self, infobox: Template) -> None:
+        if len(self.buildable.recipe_producer_types) > 0:
+            infobox.add('Recipe Producer Types', self.buildable.recipe_producer_types)
+            infobox.add('Recipe Multiplier', self.buildable.recipe_multiplier)
+
+    def _put_lvg_info(self, infobox: Template) -> None:
+        if self.buildable.lvg_connection:
+            infobox.add('Low Voltage Grid', '1')
+        if 'CONSUMER' in self.buildable.power_subtype and self.buildable.energy_consumption not in {'', '0'}:
+            infobox.add('Energy Consumption', self.buildable.energy_consumption)
+
+    def _put_hvg_info(self, infobox: Template) -> None:
+        if self.buildable.hvg_connection:
+            infobox.add('High Voltage Grid',        '1')
+            infobox.add('High Voltage Subtype',     self.buildable.power_subtype)
+            infobox.add('High Voltage Connections', self.buildable.hvg_connection_max)
+            infobox.add('High Voltage Range',       self.buildable.hvg_connection_range)
+
+    def _put_transformer_info(self, infobox: Template) -> None:
+        if 'TRANSFORMER' in self.buildable.power_subtype and self.buildable.hvg_transmission not in {'', '0'}:
+            infobox.add('High Voltage Transmission', self.buildable.hvg_transmission)
+
+    def _put_battery_info(self, infobox: Template) -> None:
+        if self.buildable.battery_capacity:
+            infobox.add('Battery Capacity', self.buildable.battery_capacity)
+
+    def _put_storage_info(self, infobox: Template) -> None:
+        if self.buildable.storage_size:
+            infobox.add('Storage Size', self.buildable.storage_size)
+
+    def _put_sales_info(self, infobox: Template) -> None:
+        if 'SALES_ITEM' in self.flags:
+            infobox.add('Sales Category', self.si_category)
+            infobox.add('Sales Industry', self.si_industry)
+            infobox.add('Sales Price', self.si_price)
+            infobox.add('Sales Base Demand', self.si_base_demand)
+
+    def _put_workstation_info(self, infobox: Template) -> None:
+        if 'WORKSTATION_ITEM' in self.flags:
+            infobox.add('Workstation Targets', self.ws_required)
+            infobox.add('Workstation Excludes', self.ws_excluded)
+            if self.buildable and self.buildable.ws_affects:
+                infobox.add('Workstation Affects', self.buildable.ws_affects)
+
+    def wikitext_infobox(self) -> Template:
+        """Create Infobox wikicode for this Item.
+
+        Returns
+        -------
+        Template
+            An MWPFH node containing the populated Infobox template for this Item.
+
+        """
+        def infobox_type(flags: str) -> Template:
+            base_template = 'Item'
+            if 'CRITTER' in flags:
+                base_template = 'Critter'
+            if 'BUILDABLE_OBJECT' in flags:
+                base_template = 'Buildable'
+            return base_template
+
+        infobox = Template(f'{infobox_type(self.flags)}\n')
+
+        infobox.add('Name', f' {self.name}\n')
+        if self.stack_size > 0:
+            infobox.add('Stack Size', self.stack_size)
+        if self.fuel_value != '':
+            infobox.add('Fuel Value', self.fuel_value)
+        if self.cm_in_creative_mode and self.cm_category and len(self.cm_category) > 0:
+            infobox.add('Category', self.cm_category)
+        self._put_buildable_info(infobox)
+        self._put_sales_info(infobox)
+        self._put_workstation_info(infobox)
+        return infobox
 
     @staticmethod
     def id_to_name(item_id: str, config: Config) -> str:
